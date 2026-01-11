@@ -109,4 +109,73 @@ public class UserService {
                         + app.getCounsellorEmail() + "] at " + app.getStartTime())
                 .toList();
     }
+    // UserService.java
+
+// ARHAMMMMMMMMMMMMMMMMMM
+
+// Admin Method: Get all students and their detailed info
+    public List<Student> getAllStudents() {
+        return userRepository.findAll().stream()
+                .filter(u -> u instanceof Student)
+                .map(u -> (Student) u)
+                .toList();
+    }
+
+// Admin Method: Get students filtered by their type (College vs University)
+    public List<Student> getStudentsByType(String type) {
+        return userRepository.findAll().stream()
+                .filter(u -> u instanceof Student && type.equalsIgnoreCase(((Student) u).getStudentType()))
+                .map(u -> (Student) u)
+                .toList();
+}
+//ARHAMMMMMMMMM
+    // public List<Counsellor> getAllCounsellors() {
+    //     // TODO Auto-generated method stub
+    //     throw new UnsupportedOperationException("Unimplemented method 'getAllCounsellors'");
+    // }
+
+    public void deleteUser(String id) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteUser'");
+    }
+    // UserService.java
+
+// Admin Method: Get all counsellors (both PENDING and APPROVED)
+public List<Counsellor> getAllCounsellors() {
+    return userRepository.findAll().stream()
+            .filter(u -> u instanceof Counsellor)
+            .map(u -> (Counsellor) u)
+            .toList();
+}
+
+// Admin Method: Filter counsellors by status (e.g., to see who needs approval)
+public List<Counsellor> getCounsellorsByStatus(String status) {
+    return userRepository.findAll().stream()
+            .filter(u -> u instanceof Counsellor && status.equalsIgnoreCase(((Counsellor) u).getStatus()))
+            .map(u -> (Counsellor) u)
+            .toList();
+}
+// UserService.java
+
+// Admin Method: Remove a user (Student or Counsellor) by ID
+public String deleteUserById(String id) {
+    if (userRepository.existsById(id)) {
+        userRepository.deleteById(id);
+        return "User with ID " + id + " has been successfully removed.";
+    } else {
+        // This triggers your custom exception if the ID is wrong
+        throw new UserNotFoundException("Delete failed: User ID " + id + " does not exist.");
+    }
+}
+// UserService.java
+
+public String rejectCounsellor(String email) {
+    User user = userRepository.findByEmail(email);
+    if (user instanceof Counsellor) {
+        ((Counsellor) user).setStatus("REJECTED");
+        userRepository.save(user);
+        return "Counsellor application for " + email + " has been REJECTED.";
+    }
+    throw new UserNotFoundException("Counsellor not found.");
+}
 }
