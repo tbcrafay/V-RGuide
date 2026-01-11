@@ -16,6 +16,8 @@ import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 @Service
 public class UserService {
@@ -253,7 +255,7 @@ public String cancelAppointment(String appointmentId) {
 // }
 // UserService.java
 
-public String processBooking(String student, String counsellorEmail, String day, String slot) {
+public synchronized String processBooking(String student, String counsellorEmail, String day, String slot) {
     User user = userRepository.findByEmail(counsellorEmail);
     
     if (user instanceof Counsellor counsellor) {
@@ -280,4 +282,38 @@ public String processBooking(String student, String counsellorEmail, String day,
         }
     }
     return "Error: Slot not available.";
-}}
+}
+// UserService.java
+
+public List<Counsellor> findBySpecialization(String spec) {
+    List<User> allUsers = userRepository.findAll();
+    List<Counsellor> results = new ArrayList<>();
+
+    for (User user : allUsers) {
+        if (user instanceof Counsellor counsellor) {
+            // Case-insensitive check (e.g., "mental health" matches "Mental Health")
+            if (counsellor.getSpecialization() != null && 
+                counsellor.getSpecialization().equalsIgnoreCase(spec)) {
+                results.add(counsellor);
+            }
+        }
+    }
+    return results;
+}
+
+    // @GetMapping("/student/my-appointments/{email}")
+    // public List<Appointment> getStudentDashboard(@PathVariable String email) {
+    //     // Now this will not be null
+    //     return appointmentRepository.findByStudentEmail(email);
+    // }
+    // UserService.java
+public String updateStudentPreferences(String email, List<String> slots) {
+    User user = userRepository.findByEmail(email);
+    if (user != null) {
+        user.setPreferredSlots(slots);
+        userRepository.save(user);
+        return "Preferences updated successfully!";
+    }
+    return "User not found.";
+}
+}

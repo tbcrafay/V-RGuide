@@ -70,4 +70,15 @@ public String cancelAppointment(@PathVariable String id) {
             details.get("timeSlot")
         );
     }
+    // UserController.java
+
+@GetMapping("/counsellors/filter")
+public List<Counsellor> getCounsellorsBySpec(@RequestParam String specialization) {
+    return userService.findBySpecialization(specialization);
+}
+// UserController.java
+@PutMapping("/student/update-preferences/{email}")
+public String updatePreferences(@PathVariable String email, @RequestBody List<String> slots) {
+    return userService.updateStudentPreferences(email, slots);
+}
 }

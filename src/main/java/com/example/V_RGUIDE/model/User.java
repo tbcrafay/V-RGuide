@@ -3,6 +3,9 @@ package com.example.V_RGUIDE.model;
 import lombok.Data;
 import lombok.Setter;
 import lombok.AccessLevel;
+
+import java.util.List;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -20,4 +23,5 @@ public abstract class User {
     private String email;
     private String password;
     private String role;
+    public abstract void setPreferredSlots(List<String> slots);
 }

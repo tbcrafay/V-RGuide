@@ -33,4 +33,10 @@ public Map<String, List<String>> getWeeklySchedule() {
 public void setWeeklySchedule(Map<String, List<String>> weeklySchedule) {
     this.weeklySchedule = weeklySchedule;
 }
+
+@Override
+public void setPreferredSlots(List<String> slots) {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'setPreferredSlots'");
+}
 }
