@@ -24,4 +24,6 @@ public abstract class User {
     private String password;
     private String role;
     public abstract void setPreferredSlots(List<String> slots);
+    private String otp;
+    private boolean isVerified = false;
 }
