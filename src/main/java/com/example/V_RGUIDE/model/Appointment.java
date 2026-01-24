@@ -46,4 +46,7 @@ public class Appointment {
     public void setMeetingLink(String meetingLink) {
         this.meetingLink = meetingLink;
     }
+
+    // Add this field to Appointment.java
+    private boolean adminViewed = false;
 }

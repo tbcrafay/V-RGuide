@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.V_RGUIDE.model.Appointment;
 import com.example.V_RGUIDE.model.Counsellor;
 import com.example.V_RGUIDE.model.Student;
+import com.example.V_RGUIDE.model.User;
 import com.example.V_RGUIDE.repository.AppointmentRepository;
 import com.example.V_RGUIDE.service.UserService;
 
@@ -115,4 +116,40 @@ public class UserController {
         String password = credentials.get("password");
         return userService.login(email, password);
     }
+
+    // Add this inside UserController.java
+    @GetMapping("/admin/appointments")
+    public List<Appointment> getAllAppointments() {
+        return appointmentRepository.findAll();
+    }
+
+    // Add to UserController.java
+    @PutMapping("/admin/appointments/mark-read")
+    public String markAppointmentsAsRead() {
+        List<Appointment> unread = appointmentRepository.findAll();
+        for (Appointment app : unread) {
+            app.setAdminViewed(true);
+        }
+        appointmentRepository.saveAll(unread);
+        return "All appointments marked as read";
+    }
+
+    @PutMapping("/counsellor/update-profile")
+    public String updateCounsellorProfile(@RequestBody Map<String, String> updates) {
+        String currentEmail = updates.get("currentEmail");
+        String newEmail = updates.get("newEmail");
+        String newName = updates.get("name");
+        String newPassword = updates.get("password");
+
+        return userService.updateCounsellorProfile(currentEmail, newName, newEmail, newPassword);
+    }
+
+    @GetMapping("/find")
+    public User findUserByEmail(@RequestParam String email) {
+        // This uses your existing userService.findUser(email)
+        // Even though it returns 'User', Spring/Jackson will serialize
+        // it as a 'Counsellor' object including the specialization field.
+        return userService.findUser(email);
+    }
+
 }

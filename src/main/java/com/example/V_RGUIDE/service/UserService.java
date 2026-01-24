@@ -106,8 +106,22 @@ public class UserService {
 
     public Map<String, Long> getAdminStats() {
         List<User> allUsers = userRepository.findAll();
+        Map<String, Long> stats = new HashMap<>();
 
-        // Student counts
+        // 1. TOTALS (Operational Data)
+        long totalStudents = allUsers.stream()
+                .filter(u -> u instanceof Student)
+                .count();
+
+        long pendingCounsellors = allUsers.stream()
+                .filter(u -> u instanceof Counsellor && "PENDING".equalsIgnoreCase(((Counsellor) u).getStatus()))
+                .count();
+
+        long approvedCounsellors = allUsers.stream()
+                .filter(u -> u instanceof Counsellor && "APPROVED".equalsIgnoreCase(((Counsellor) u).getStatus()))
+                .count();
+
+        // 2. BREAKDOWNS (HCI Strategy: Flexibility over rigid strings)
         long collegeStudents = allUsers.stream()
                 .filter(u -> u instanceof Student && "COLLEGE".equalsIgnoreCase(((Student) u).getStudentType()))
                 .count();
@@ -116,23 +130,43 @@ public class UserService {
                 .filter(u -> u instanceof Student && "UNIVERSITY".equalsIgnoreCase(((Student) u).getStudentType()))
                 .count();
 
-        // Counsellor counts by Specialization
-        long mentalHealthCounsellors = allUsers.stream()
-                .filter(u -> u instanceof Counsellor
-                        && "Mental Health".equalsIgnoreCase(((Counsellor) u).getSpecialization()))
+        // Career Logic: Catches "Career", "Career Guidance", "Career Counseling"
+        long careerCount = allUsers.stream()
+                .filter(u -> u instanceof Counsellor)
+                .map(u -> (Counsellor) u)
+                .filter(c -> c.getSpecialization() != null &&
+                        c.getSpecialization().toLowerCase().contains("career"))
                 .count();
 
-        long careerCounsellors = allUsers.stream()
-                .filter(u -> u instanceof Counsellor
-                        && "Career Guidance".equalsIgnoreCase(((Counsellor) u).getSpecialization()))
+        // Mental Health Logic: Catches "Mental Health", "Mental", "Therapy"
+        long mentalHealthCount = allUsers.stream()
+                .filter(u -> u instanceof Counsellor)
+                .map(u -> (Counsellor) u)
+                .filter(c -> c.getSpecialization() != null &&
+                        (c.getSpecialization().toLowerCase().contains("mental") ||
+                                c.getSpecialization().toLowerCase().contains("health")))
                 .count();
 
-        // Putting it all in the Map (Proper Format)
-        Map<String, Long> stats = new HashMap<>();
-        stats.put("CollegeStudents", collegeStudents);
-        stats.put("UniversityStudents", universityStudents);
-        stats.put("MentalHealthCounsellors", mentalHealthCounsellors);
-        stats.put("CareerCounsellors", careerCounsellors);
+        // In UserService.java (inside getAdminStats)
+        long newAppointments = appointmentRepository.findAll().stream()
+                .filter(app -> !app.isAdminViewed())
+                .count();
+        stats.put("newAppointments", newAppointments);
+
+        // 3. APPOINTMENTS
+        long totalAppointments = appointmentRepository.count();
+
+        // Pack the Map (Keys must match AdminDashboard.jsx)
+        stats.put("totalStudents", totalStudents);
+        stats.put("pendingCounsellors", pendingCounsellors);
+        stats.put("approvedCounsellors", approvedCounsellors);
+        stats.put("newAppointments", newAppointments);
+
+        // Details for sub-labels
+        stats.put("collegeCount", collegeStudents);
+        stats.put("universityCount", universityStudents);
+        stats.put("mentalHealthCount", mentalHealthCount);
+        stats.put("careerCount", careerCount);
 
         return stats;
     }
@@ -443,4 +477,54 @@ public class UserService {
         return "Login failed: User with this email does not exist.";
     }
 
+    // Inside UserService.java
+
+public String updateCounsellorProfile(String currentEmail, String name, String newEmail, String password) {
+    User user = userRepository.findByEmail(currentEmail);
+
+    if (user instanceof Counsellor counsellor) {
+        // 1. Update basic information
+        counsellor.setName(name);
+
+        // 2. Check if Email is being changed
+        boolean isEmailChanged = newEmail != null && !newEmail.isEmpty() && !newEmail.equalsIgnoreCase(currentEmail);
+        
+        // 3. Check if Password is being changed (not empty and not the masked placeholder)
+        boolean isPasswordChanged = password != null && !password.isEmpty() && !password.equals("••••••••");
+
+        if (isEmailChanged || isPasswordChanged) {
+            // Trigger Security Flow: Re-verify
+            if (isEmailChanged) {
+                // Check if new email is already taken by someone else
+                if (userRepository.findByEmail(newEmail) != null) {
+                    return "Error: The new email is already in use.";
+                }
+                counsellor.setEmail(newEmail);
+            }
+            
+            if (isPasswordChanged) {
+                counsellor.setPassword(password);
+            }
+
+            // Generate new OTP for the new security state
+            String otp = String.valueOf((int) (Math.random() * 9000) + 1000);
+            counsellor.setOtp(otp);
+            counsellor.setVerified(false); // This forces them to the verify page
+            
+            userRepository.save(counsellor);
+
+            // Send notification to the NEW email
+            emailService.sendEmail(counsellor.getEmail(), "V-RGUIDE: Security Update",
+                    "A change was requested for your account credentials. Your verification code is: " + otp);
+
+            return "Security update detected. Please verify your new credentials.";
+        }
+
+        // 4. If only basic info changed, just save
+        userRepository.save(counsellor);
+        return "Profile updated successfully!";
+    }
+    
+    throw new UserNotFoundException("Counsellor not found.");
+}
 }
