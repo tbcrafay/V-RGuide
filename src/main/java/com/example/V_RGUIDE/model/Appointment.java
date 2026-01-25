@@ -27,6 +27,7 @@ public class Appointment {
     private String status; // BOOKED, CANCELLED, COMPLETED
 
     private LocalDateTime createdAt = LocalDateTime.now();
+    private boolean roomActive = false;
 
     // Helper method remains fine
     public void setBookingDetails(String date, String slot) {
@@ -49,4 +50,14 @@ public class Appointment {
 
     // Add this field to Appointment.java
     private boolean adminViewed = false;
+
+    // Getter
+    public boolean isRoomActive() {
+        return roomActive;
+    }
+
+    // Setter
+    public void setRoomActive(boolean roomActive) {
+        this.roomActive = roomActive;
+    }
 }

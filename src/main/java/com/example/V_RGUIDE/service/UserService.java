@@ -282,16 +282,24 @@ public class UserService {
     }
     // UserService.java
 
-    public String postWeeklySchedule(String email, Map<String, List<String>> newSchedule) {
+    public String postWeeklySchedule(String email, Map<String, List<String>> schedule) {
+        // 1. Find the user
         User user = userRepository.findByEmail(email);
 
-        if (user instanceof Counsellor counsellor) {
-            // This takes your JSON and saves it directly to the counsellor's profile
-            counsellor.setWeeklySchedule(newSchedule);
+        // 2. Check if they exist and are actually a Counsellor
+        if (user instanceof Counsellor) {
+            Counsellor counsellor = (Counsellor) user;
+
+            // 3. Set the new schedule (the Map<String, List<String>>)
+            counsellor.setWeeklySchedule(schedule);
+
+            // 4. Save back to MongoDB
             userRepository.save(counsellor);
-            return "Weekly schedule posted successfully!";
+
+            return "Schedule updated successfully";
         }
-        return "Counsellor not found.";
+
+        return "Error: Counsellor not found with email: " + email;
     }
     // UserService.java
 
@@ -310,34 +318,37 @@ public class UserService {
     }
 
     public String cancelAppointment(String appointmentId) {
-        Optional<Appointment> apptOpt = appointmentRepository.findById(appointmentId);
+        Optional<Appointment> opt = appointmentRepository.findById(appointmentId);
+        if (opt.isPresent()) {
+            Appointment appt = opt.get();
+            String studentEmail = appt.getStudentEmail();
+            String date = appt.getAppointmentDate();
+            String slot = appt.getTimeSlot();
 
-        if (apptOpt.isPresent()) {
-            Appointment appt = apptOpt.get();
-
-            // 1. Restore the slot to the Counsellor
             User user = userRepository.findByEmail(appt.getCounsellorEmail());
-            if (user instanceof Counsellor counsellor) {
-                Map<String, List<String>> schedule = counsellor.getWeeklySchedule();
-                String day = appt.getAppointmentDate();
 
-                // Add the slot back to the list for that day
-                schedule.computeIfAbsent(day, k -> new ArrayList<>()).add(appt.getTimeSlot());
+            if (user instanceof Counsellor counsellor) {
+                // 1. Restore the slot to the map
+                Map<String, List<String>> schedule = counsellor.getWeeklySchedule();
+                schedule.computeIfAbsent(date, k -> new ArrayList<>()).add(slot);
                 userRepository.save(counsellor);
+
+                // 2. Format the message for your existing notifyStudent method
+                String details = "Hello,\n\n" +
+                        "Notice: Your session with " + counsellor.getName() +
+                        " scheduled for " + date + " at " + slot + " has been cancelled.\n\n" +
+                        "The time slot has been released. You may log in to book a different session.\n\n" +
+                        "Best regards,\nV-RGUIDE Team";
+
+                // 3. Trigger the email using the public @Async method
+                this.notifyStudent(studentEmail, details);
             }
 
-            // 2. Trigger the Notification (Asynchronous)
-            // Improved notification call
-            notifyStudent(appt.getStudentEmail(),
-                    "Your appointment on " + appt.getAppointmentDate() + " at " + appt.getTimeSlot()
-                            + " has been cancelled.");
-
-            // 3. Delete the record
-            appointmentRepository.deleteById(appointmentId);
-
-            return "Appointment cancelled and slot restored.";
+            appt.setStatus("CANCELLED");
+            appointmentRepository.save(appt);
+            return "Success: Session cancelled and student notified.";
         }
-        return "Appointment not found.";
+        return "Error: Appointment not found.";
     }
 
     // public String processBooking(String string, String string2, String string3,
@@ -350,40 +361,49 @@ public class UserService {
 
     // Keep this exact name as requested
     // Main Booking Logic
-    public synchronized String processBooking(String student, String counsellorEmail, String day, String slot) {
-        User user = userRepository.findByEmail(counsellorEmail);
+    // Updated processBooking in UserService.java
+    public synchronized String processBooking(String studentEmail, String counsellorEmail, String day, String slot) {
+        // 1. DATA INTEGRITY CHECK: Prevent a student from booking themselves
+        if (studentEmail.equalsIgnoreCase(counsellorEmail)) {
+            return "Error: Protocol Violation. Student and Counsellor identities cannot match.";
+        }
 
+        // 2. STUDENT CONFLICT CHECK (The "Deadlock" Fix)
+        // We check if THIS student already has an active appointment for this date and
+        // slot
+        List<Appointment> studentApps = appointmentRepository.findByStudentEmail(studentEmail);
+        boolean studentHasConflict = studentApps.stream()
+                .anyMatch(a -> a.getAppointmentDate().equalsIgnoreCase(day)
+                        && a.getTimeSlot().equalsIgnoreCase(slot)
+                        && !"CANCELLED".equals(a.getStatus()));
+
+        if (studentHasConflict) {
+            return "Error: Logical Conflict detected. You already have a session at " + slot + " on " + day + ".";
+        }
+
+        // 3. COUNSELLOR AVAILABILITY CHECK (Existing Logic)
+        User user = userRepository.findByEmail(counsellorEmail);
         if (user instanceof Counsellor counsellor) {
             Map<String, List<String>> schedule = counsellor.getWeeklySchedule();
 
             if (schedule != null && schedule.containsKey(day) && schedule.get(day).contains(slot)) {
-
-                // 1. Remove the slot from the counsellor
+                // Remove slot from counsellor availability
                 schedule.get(day).remove(slot);
                 userRepository.save(counsellor);
 
-                // 2. Generate Jitsi Link
-                String roomName = "VRGUIDE-" + counsellor.getName().replace(" ", "-") + "-"
-                        + System.currentTimeMillis();
-                String jitsiUrl = "https://meet.jit.si/" + roomName;
-
-                // 3. Create and Save Appointment
+                // Create Appointment
                 Appointment appt = new Appointment();
-                appt.setStudentEmail(student);
+                appt.setStudentEmail(studentEmail);
                 appt.setCounsellorEmail(counsellorEmail);
                 appt.setAppointmentDate(day);
                 appt.setTimeSlot(slot);
                 appt.setStatus("BOOKED");
-                appt.setMeetingLink(jitsiUrl);
                 appointmentRepository.save(appt);
 
-                // 4. Trigger the notification (Fixed method name call)
-                sendBookingEmail(student, jitsiUrl, day, slot);
-
-                return "Success: Appointment booked for " + day + " at " + slot + ". Meeting Link: " + jitsiUrl;
+                return "Success: Appointment secured.";
             }
         }
-        return "Error: Slot not available.";
+        return "Error: Slot no longer available.";
     }
 
     // Helper method to fix the 'method not found' error
@@ -479,52 +499,188 @@ public class UserService {
 
     // Inside UserService.java
 
-public String updateCounsellorProfile(String currentEmail, String name, String newEmail, String password) {
-    User user = userRepository.findByEmail(currentEmail);
+    public String updateCounsellorProfile(String currentEmail, String name, String newEmail, String password) {
+        User user = userRepository.findByEmail(currentEmail);
 
-    if (user instanceof Counsellor counsellor) {
-        // 1. Update basic information
-        counsellor.setName(name);
+        if (user instanceof Counsellor counsellor) {
+            // 1. Update basic information
+            counsellor.setName(name);
 
-        // 2. Check if Email is being changed
-        boolean isEmailChanged = newEmail != null && !newEmail.isEmpty() && !newEmail.equalsIgnoreCase(currentEmail);
-        
-        // 3. Check if Password is being changed (not empty and not the masked placeholder)
-        boolean isPasswordChanged = password != null && !password.isEmpty() && !password.equals("••••••••");
+            // 2. Check if Email is being changed
+            boolean isEmailChanged = newEmail != null && !newEmail.isEmpty()
+                    && !newEmail.equalsIgnoreCase(currentEmail);
 
-        if (isEmailChanged || isPasswordChanged) {
-            // Trigger Security Flow: Re-verify
-            if (isEmailChanged) {
-                // Check if new email is already taken by someone else
-                if (userRepository.findByEmail(newEmail) != null) {
-                    return "Error: The new email is already in use.";
+            // 3. Check if Password is being changed (not empty and not the masked
+            // placeholder)
+            boolean isPasswordChanged = password != null && !password.isEmpty() && !password.equals("••••••••");
+
+            if (isEmailChanged || isPasswordChanged) {
+                // Trigger Security Flow: Re-verify
+                if (isEmailChanged) {
+                    // Check if new email is already taken by someone else
+                    if (userRepository.findByEmail(newEmail) != null) {
+                        return "Error: The new email is already in use.";
+                    }
+                    counsellor.setEmail(newEmail);
                 }
-                counsellor.setEmail(newEmail);
-            }
-            
-            if (isPasswordChanged) {
-                counsellor.setPassword(password);
+
+                if (isPasswordChanged) {
+                    counsellor.setPassword(password);
+                }
+
+                // Generate new OTP for the new security state
+                String otp = String.valueOf((int) (Math.random() * 9000) + 1000);
+                counsellor.setOtp(otp);
+                counsellor.setVerified(false); // This forces them to the verify page
+
+                userRepository.save(counsellor);
+
+                // Send notification to the NEW email
+                emailService.sendEmail(counsellor.getEmail(), "V-RGUIDE: Security Update",
+                        "A change was requested for your account credentials. Your verification code is: " + otp);
+
+                return "Security update detected. Please verify your new credentials.";
             }
 
-            // Generate new OTP for the new security state
-            String otp = String.valueOf((int) (Math.random() * 9000) + 1000);
-            counsellor.setOtp(otp);
-            counsellor.setVerified(false); // This forces them to the verify page
-            
+            // 4. If only basic info changed, just save
             userRepository.save(counsellor);
-
-            // Send notification to the NEW email
-            emailService.sendEmail(counsellor.getEmail(), "V-RGUIDE: Security Update",
-                    "A change was requested for your account credentials. Your verification code is: " + otp);
-
-            return "Security update detected. Please verify your new credentials.";
+            return "Profile updated successfully!";
         }
 
-        // 4. If only basic info changed, just save
-        userRepository.save(counsellor);
-        return "Profile updated successfully!";
+        throw new UserNotFoundException("Counsellor not found.");
     }
-    
-    throw new UserNotFoundException("Counsellor not found.");
-}
+
+    public String updateStudentProfile(String currentEmail, String name, String newEmail, String password,
+            String studentType) {
+        User user = userRepository.findByEmail(currentEmail);
+
+        if (user instanceof Student student) {
+            // 1. Update basic information
+            student.setName(name);
+            student.setStudentType(studentType); // Specific to Student
+
+            // 2. Logic flags for sensitive changes
+            boolean isEmailChanged = newEmail != null && !newEmail.isEmpty()
+                    && !newEmail.equalsIgnoreCase(currentEmail);
+            boolean isPasswordChanged = password != null && !password.isEmpty() && !password.equals("••••••••");
+
+            if (isEmailChanged || isPasswordChanged) {
+                if (isEmailChanged) {
+                    if (userRepository.findByEmail(newEmail) != null) {
+                        return "Error: The new email is already in use.";
+                    }
+                    student.setEmail(newEmail);
+                }
+
+                if (isPasswordChanged) {
+                    student.setPassword(password);
+                }
+
+                // 3. Security Reset
+                String otp = String.valueOf((int) (Math.random() * 9000) + 1000);
+                student.setOtp(otp);
+                student.setVerified(false);
+
+                userRepository.save(student);
+
+                emailService.sendEmail(student.getEmail(), "V-RGUIDE: Student Security Update",
+                        "Credential changes detected. Your new verification code is: " + otp);
+
+                return "Security update detected. Please verify your new credentials.";
+            }
+
+            // 4. Standard Update
+            userRepository.save(student);
+            return "Profile updated successfully!";
+        }
+        throw new UserNotFoundException("Student not found.");
+    }
+
+    // Add this to the bottom of UserService.java
+    public List<Counsellor> getApprovedCounsellors() {
+        return userRepository.findAll().stream()
+                .filter(u -> u instanceof Counsellor)
+                .map(u -> (Counsellor) u)
+                .filter(c -> "APPROVED".equals(c.getStatus()))
+                .toList();
+    }
+
+    // Add this to UserService.java
+
+    public String cancelByStudent(String appointmentId) {
+        Optional<Appointment> opt = appointmentRepository.findById(appointmentId);
+
+        if (opt.isPresent()) {
+            Appointment appt = opt.get();
+
+            // If it's already cancelled, don't process again (Idempotency)
+            if ("CANCELLED".equals(appt.getStatus())) {
+                return "Error: Appointment is already cancelled.";
+            }
+
+            String counsellorEmail = appt.getCounsellorEmail();
+            String studentEmail = appt.getStudentEmail();
+            String date = appt.getAppointmentDate();
+            String slot = appt.getTimeSlot();
+
+            // 1. Update the appointment status
+            appt.setStatus("CANCELLED");
+            appointmentRepository.save(appt);
+
+            // 2. Return the slot to the Counsellor's schedule so others can book it
+            User user = userRepository.findByEmail(counsellorEmail);
+            if (user instanceof Counsellor counsellor) {
+                Map<String, List<String>> schedule = counsellor.getWeeklySchedule();
+                if (schedule == null)
+                    schedule = new HashMap<>();
+
+                List<String> slots = schedule.getOrDefault(date, new ArrayList<>());
+                if (!slots.contains(slot)) {
+                    slots.add(slot);
+                    schedule.put(date, slots);
+                    counsellor.setWeeklySchedule(schedule);
+                    userRepository.save(counsellor);
+                }
+
+                // 3. Notify the Counsellor via Email
+                String messageToCounsellor = "Protocol Update: Appointment Cancelled\n\n" +
+                        "Student (" + studentEmail + ") has cancelled their session scheduled for " +
+                        date + " at " + slot + ".\n\n" +
+                        "This time slot has been automatically returned to your available schedule.";
+
+                this.notifyStudent(counsellorEmail, messageToCounsellor); // Reusing notifyStudent for email sending
+            }
+
+            return "Success: Session cancelled. The counsellor has been notified.";
+        }
+        return "Error: Appointment ID not found.";
+    }
+
+    // ADD THIS NEW METHOD to UserService.java
+    public String secureActivateRoom(String id) {
+        Optional<Appointment> opt = appointmentRepository.findById(id);
+
+        if (opt.isPresent()) {
+            Appointment appt = opt.get();
+
+            // 1. Get Current Day (e.g., "Monday", "Friday")
+            // We use Title Case to match your DB entries like "Friday"
+            String currentDay = java.time.LocalDate.now()
+                    .getDayOfWeek()
+                    .getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
+
+            // 2. LOGICAL GATE: Compare current day with appointment day
+            if (!appt.getAppointmentDate().equalsIgnoreCase(currentDay)) {
+                return "DENIED: This session is scheduled for " + appt.getAppointmentDate() +
+                        ". You cannot activate the room on " + currentDay + ".";
+            }
+
+            // 3. ACTIVATE
+            appt.setRoomActive(true);
+            appointmentRepository.save(appt);
+            return "SUCCESS: Room activated. Student can now join.";
+        }
+        return "ERROR: Appointment not found.";
+    }
+
 }

@@ -88,11 +88,6 @@ public class UserController {
         return appointmentRepository.findByStudentEmail(email);
     }
 
-    @DeleteMapping("/appointments/cancel/{id}")
-    public String cancelAppointment(@PathVariable String id) {
-        return userService.cancelAppointment(id);
-    }
-
     @PutMapping("/student/update-preferences/{email}")
     public String updatePreferences(@PathVariable String email, @RequestBody List<String> slots) {
         return userService.updateStudentPreferences(email, slots);
@@ -144,6 +139,15 @@ public class UserController {
         return userService.updateCounsellorProfile(currentEmail, newName, newEmail, newPassword);
     }
 
+    @PutMapping("/student/update-profile")
+    public String updateStudent(@RequestParam String currentEmail,
+            @RequestParam String name,
+            @RequestParam String newEmail,
+            @RequestParam String password,
+            @RequestParam String studentType) {
+        return userService.updateStudentProfile(currentEmail, name, newEmail, password, studentType);
+    }
+
     @GetMapping("/find")
     public User findUserByEmail(@RequestParam String email) {
         // This uses your existing userService.findUser(email)
@@ -152,4 +156,44 @@ public class UserController {
         return userService.findUser(email);
     }
 
+    // Inside UserController.java
+
+    @GetMapping("/student-info/{email}")
+    public User getStudentInfo(@PathVariable String email) {
+        return userService.findUser(email); //
+    }
+
+    @GetMapping("/counsellor/my-sessions/{email}")
+    public List<Appointment> getCounsellorSessions(@PathVariable String email) {
+        return appointmentRepository.findByCounsellorEmail(email); //
+    }
+
+    // REPLACE the existing activateRoom method in UserController.java with this:
+    @PutMapping("/appointments/activate-room/{id}")
+    public String activateRoom(@PathVariable String id) {
+        // We now call the secure service method instead of modifying the repo directly
+        return userService.secureActivateRoom(id);
+    }
+
+    @DeleteMapping("/appointments/cancel/{id}")
+    public String cancelAppointment(@PathVariable String id) { // Changed Long to String
+        return userService.cancelAppointment(id);
+    }
+
+    @GetMapping("/student/my-sessions/{email}")
+    public List<Appointment> getStudentSessions(@PathVariable String email) {
+        return appointmentRepository.findByStudentEmail(email);
+    }
+
+    // Add this to UserController.java (anywhere inside the class)
+    @GetMapping("/approved-counsellors")
+    public List<Counsellor> getApprovedCounsellors() {
+        return userService.getApprovedCounsellors();
+    }
+
+    // Add to UserController.java
+    @DeleteMapping("/student/cancel-session/{id}")
+    public String studentCancel(@PathVariable String id) {
+        return userService.cancelByStudent(id);
+    }
 }
