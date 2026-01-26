@@ -91,7 +91,7 @@ public class UserService {
             counsellor.setStatus("APPROVED");
             userRepository.save(counsellor);
 
-            // This triggers the real email notification
+            
             emailService.sendEmail(
                     email,
                     "V-RGUIDE: Application Approved!",
@@ -363,14 +363,12 @@ public class UserService {
     // Main Booking Logic
     // Updated processBooking in UserService.java
     public synchronized String processBooking(String studentEmail, String counsellorEmail, String day, String slot) {
-        // 1. DATA INTEGRITY CHECK: Prevent a student from booking themselves
+        
         if (studentEmail.equalsIgnoreCase(counsellorEmail)) {
             return "Error: Protocol Violation. Student and Counsellor identities cannot match.";
         }
 
-        // 2. STUDENT CONFLICT CHECK (The "Deadlock" Fix)
-        // We check if THIS student already has an active appointment for this date and
-        // slot
+        
         List<Appointment> studentApps = appointmentRepository.findByStudentEmail(studentEmail);
         boolean studentHasConflict = studentApps.stream()
                 .anyMatch(a -> a.getAppointmentDate().equalsIgnoreCase(day)
@@ -555,11 +553,11 @@ public class UserService {
         User user = userRepository.findByEmail(currentEmail);
 
         if (user instanceof Student student) {
-            // 1. Update basic information
+            
             student.setName(name);
-            student.setStudentType(studentType); // Specific to Student
+            student.setStudentType(studentType); 
 
-            // 2. Logic flags for sensitive changes
+            
             boolean isEmailChanged = newEmail != null && !newEmail.isEmpty()
                     && !newEmail.equalsIgnoreCase(currentEmail);
             boolean isPasswordChanged = password != null && !password.isEmpty() && !password.equals("••••••••");
@@ -576,7 +574,7 @@ public class UserService {
                     student.setPassword(password);
                 }
 
-                // 3. Security Reset
+                
                 String otp = String.valueOf((int) (Math.random() * 9000) + 1000);
                 student.setOtp(otp);
                 student.setVerified(false);
@@ -589,7 +587,7 @@ public class UserService {
                 return "Security update detected. Please verify your new credentials.";
             }
 
-            // 4. Standard Update
+            
             userRepository.save(student);
             return "Profile updated successfully!";
         }
